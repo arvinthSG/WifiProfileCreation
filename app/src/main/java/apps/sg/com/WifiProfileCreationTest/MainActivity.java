@@ -12,15 +12,17 @@ import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.View;
 
+import java.util.List;
+
 import apps.sg.com.wifitest.R;
 
 public class MainActivity extends AppCompatActivity {
 
     String networkSSID = "5";
     String networkPass = "qwertyuiop";
-    String networkPass2 = "qwertyuio";
-    int count = 0;
-    public static final String LOG_TAG = "WifiTest";
+
+    int retryCount = 0;
+    public static final String LOG_TAG = "WIFI_CREATION";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -36,30 +38,61 @@ public class MainActivity extends AppCompatActivity {
 
     WifiManager wifiManager;
 
+    public WifiConfiguration getWifiConfiguration() {
+        WifiConfiguration conf = new WifiConfiguration();
+        conf.SSID = "\"" + networkSSID + "\"";
+        conf.preSharedKey = "\"" + networkPass + "\"";
+        Log.d(LOG_TAG, "Ssid and Pass " + networkSSID + " " + networkPass);
+        return conf;
+    }
+
     public void connect() {
 
         Log.d(LOG_TAG, " Trying to connect");
         registerReceiver();
-        WifiConfiguration conf = new WifiConfiguration();
-        conf.SSID = "\"" + networkSSID + "\"";
-        conf.preSharedKey = "\"" + networkPass + "\"";
+        WifiConfiguration conf = getWifiConfiguration();
 
-        Log.d(LOG_TAG, "Ssid and Pass " + networkSSID + " " + networkPass);
-        wifiManager = (WifiManager) getSystemService(WIFI_SERVICE);
-
-
+        wifiManager = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
+        wifiManager.updateNetwork(conf);
         int netId = wifiManager.addNetwork(conf);
-        android.util.Log.d(LOG_TAG, "addnetwork " + netId);
-        wifiManager.disconnect();
+        Log.d(LOG_TAG, "addnetwork " + netId);
+
+        //AddNetwork Error if netID = -1
+        if (netId == -1) {
+            netId = enableNetwork(networkSSID);
+        }
+        if (netId != -1) {
+            Log.i(LOG_TAG, "Network Creation Successful");
+        }
         wifiManager.enableNetwork(netId, true);
         boolean b = wifiManager.reconnect();
         Log.d(LOG_TAG, "connect network " + b);
     }
 
+    /**
+     * TODO -This method is used to enable the disbale newtworks - usage later
+     */
+    private int enableNetwork(String networkSSID) {
+        int netId = -1;
+        List<WifiConfiguration> list = wifiManager.getConfiguredNetworks();
+        for (WifiConfiguration currWifi : list) {
+            if (currWifi.SSID != null && currWifi.SSID.equals(networkSSID)) {
+                wifiManager.disconnect();
+                wifiManager.enableNetwork(currWifi.networkId, true);
+                Log.i(LOG_TAG, "enableNetwork - reconnect");
+                wifiManager.reconnect();
+                netId = currWifi.networkId;
+                break;
+            }
+        }
+        return netId;
+    }
+
+
     private WifiReceiver receiverWifi = null;
 
     public void registerReceiver() {
-        count = 0;
+        retryCount = 0;
         receiverWifi = new WifiReceiver();
         IntentFilter mIntentFilter = new IntentFilter();
         mIntentFilter.addAction(WifiManager.SUPPLICANT_STATE_CHANGED_ACTION);
@@ -75,7 +108,7 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void onReceive(Context c, Intent intent) {
             String action = intent.getAction();
-            Log.i(LOG_TAG,"Regisster Receiver");
+            Log.i(LOG_TAG, "Regisster Receiver");
             if (action.equals(WifiManager.SUPPLICANT_STATE_CHANGED_ACTION)) {
                 Log.d(LOG_TAG, ">>>>SUPPLICANT_STATE_CHANGED_ACTION<<<<<<");
                 SupplicantState supl_state = ((SupplicantState) intent.getParcelableExtra(WifiManager.EXTRA_NEW_STATE));
@@ -130,11 +163,10 @@ public class MainActivity extends AppCompatActivity {
                  */
                 if (supl_error == WifiManager.ERROR_AUTHENTICATING) {
                     Log.i(LOG_TAG, "ERROR_AUTHENTICATING!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-                    count++;
-                    if (count > 3) {
-                        Log.i(LOG_TAG, " count exceeded");
+                    retryCount++;
+                    if (retryCount > 3) {
+                        Log.i(LOG_TAG, " retryCount exceeded");
                         wifiManager.disconnect();
-                        networkPass = networkPass2;
                         connect();
                     }
                 }
